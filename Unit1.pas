@@ -18,7 +18,8 @@ uses
   Gorilla.UI.Dialogue.Overlay, Gorilla.Controller, Gorilla.Utils.Inventory,
   Gorilla.UI.Inventory, Gorilla.Sphere, Gorilla.Material.POM, Gorilla.Material.PBR,
   Gorilla.Audio.FMOD, Gorilla.Audio.FMOD.Intf.Channel, Gorilla.Audio.FMOD.Intf.Sound,
-  Gorilla.Audio.FMOD.Intf.ChannelGroup, Gorilla.Audio.FMOD.Intf.SoundGroup;
+  Gorilla.Audio.FMOD.Intf.ChannelGroup, Gorilla.Audio.FMOD.Intf.SoundGroup,
+  Gorilla.Audio.Manager, Gorilla.Material.Custom;
 
 /// <summary>
 /// After v1.0.0.2573 the dialogue HUD was fixed. Before that version, we need
@@ -26,8 +27,13 @@ uses
 /// </summary>
 { $DEFINE FIX_DIALOGUE_HUD}
 { $DEFINE VER_1_0_0_2573}
+{$DEFINE VER_1_3_0_3815}
 
 type
+{$IFDEF VER_1_3_0_3815}
+  TFixedDialogueHUD = class(TGorillaDialogueHUD)
+  end;
+{$ELSE}
 {$IFDEF FIX_DIALOGUE_HUD}
   /// <summary>
   /// Nothing is perfect, so aren't we!
@@ -77,6 +83,7 @@ type
     procedure StopEvent(const AEvent : TGorillaDialogueItemEvent;
       const AScope : TObject); override;
   end;
+{$ENDIF}
 {$ENDIF}
 
   TForm1 = class(TForm)
@@ -145,6 +152,19 @@ type
     FCoconutFound : Boolean;
     FBananaUnlocked : Boolean;
 
+  {$IFDEF VER_1_3_0_3815}
+    // Audio: a separated channel for each sound is not needed, but for better controlling
+    FMusic : TGorillaFMODSoundItem;
+    FMusicChannel : IGorillaFMODChannelGroup;
+
+    FSteps : TGorillaFMODSoundItem;
+    FStepsChannel : IGorillaFMODChannelGroup;
+
+    FThrow   : TGorillaFMODSoundItem;
+    FPlop    : TGorillaFMODSoundItem;
+    FCollect : TGorillaFMODSoundItem;
+    FThrowChannel : IGorillaFMODChannelGroup;
+  {$ELSE}
     // Audio: a separated channel for each sound is not needed, but for better controlling
     FMusic : IGorillaFMODSound;
     FMusicChannel : IGorillaFMODChannelGroup;
@@ -156,6 +176,7 @@ type
     FPlop    : IGorillaFMODSound;
     FCollect : IGorillaFMODSound;
     FThrowChannel : IGorillaFMODChannelGroup;
+  {$ENDIF}
 
     function GetYAngleBetweenPoints(A, B : TPoint3D) : Single;
 
@@ -213,6 +234,7 @@ const
   PATHFINDING_3DSIZE_X = 128;
   PATHFINDING_3DSIZE_Z = 128;
 
+{$IFnDEF VER_1_3_0_3815}
 {$IFDEF FIX_DIALOGUE_HUD}
 { TFixedDialogueHUD }
 
@@ -556,7 +578,7 @@ begin
   end;
 end;
 {$ENDIF}
-
+{$ENDIF}
 
 
 
@@ -681,7 +703,11 @@ begin
   LShdr := TStringList.Create();
   LShdr.Text :=
     'void SurfaceShader(inout TLocals DATA){'#13#10 +
+{$IFDEF VER_1_3_0_3815}
+    '  float l_Dist = distance(_EyePos.xyz, DATA.TransfVertexPos.xyz);'#13#10 +
+{$ELSE}
     '  float l_Dist = distance(_EyePos.xyz, DATA.TransfVertPos.xyz);'#13#10 +
+{$ENDIF}
     '  l_Dist = abs(l_Dist);'#13#10 +
     '  DATA.Alpha = clamp(log(l_Dist / 4.0), 0.0, 1.0);'#13#10 +
     '  DATA.BaseColor.a = DATA.Alpha;'#13#10 +
@@ -718,6 +744,35 @@ begin
 {$ENDIF}
 
   // load music
+{$IFDEF VER_1_3_0_3815}
+  FMusic := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
+  FMusic.FileName := LPath + 'jew-13506.mp3';
+  FMusic.Loop := true;
+
+  FMusicChannel := GorillaFMODAudioManager1.AddChannelGroup('Music');
+  FMusicChannel.Volume := 0.5;
+  GorillaFMODAudioManager1.PlaySound(FMusic.Reference, FMusicChannel);
+
+  // load foot steps sample
+  FSteps := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
+  FSteps.FileName := LPath + '167157__kmoon__footsteps_grass.ogg';
+  FSteps.Loop := true;
+  FStepsChannel := GorillaFMODAudioManager1.AddChannelGroup('Steps');
+
+  // load throwing sound sample
+  FThrow := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
+  FThrow.FileName := LPath + '443617__hachiman935__objeto_lanzado_01.ogg';
+  FThrowChannel := GorillaFMODAudioManager1.AddChannelGroup('Throw');
+  FThrowChannel.Volume := FThrowChannel.Volume * 2;
+
+  // load plop sample
+  FPlop := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
+  FPlop.FileName := LPath + '447910__breviceps__plop.wav';
+
+  // load collect sample
+  FCollect := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
+  FCollect.FileName := LPath + '499790__robinhood76__08470-music-box-collect-ding.wav';
+{$ELSE}
   FMusic := GorillaFMODAudioManager1.LoadSoundFromFile(LPath + 'jew-13506.mp3');
   FMusic.Mode := FMOD_LOOP_NORMAL; // loop the music
   FMusicChannel := GorillaFMODAudioManager1.AddChannelGroup('Music');
@@ -739,6 +794,7 @@ begin
 
   // load collect sample
   FCollect := GorillaFMODAudioManager1.LoadSoundFromFile(LPath + '499790__robinhood76__08470-music-box-collect-ding.wav');
+{$ENDIF}
 
   // load all dialogue samples (starts at index #5)
   LPath := LPath + IncludeTrailingPathDelimiter('dialogues');
@@ -890,7 +946,11 @@ begin
 
   // Play walking sound if not already playing
   if not FStepsChannel.IsPlaying then
+  {$IFDEF VER_1_3_0_3815}
+    GorillaFMODAudioManager1.PlaySound(FSteps.Reference, FStepsChannel);
+  {$ELSE}
     GorillaFMODAudioManager1.PlaySound(FSteps, FStepsChannel);
+  {$ENDIF}
 end;
 
 procedure TForm1.DoOnPathAnimFinished(ASender : TObject);
@@ -944,7 +1004,11 @@ begin
   Coconut.SetVisibility(true);
 
   // Play the plop sound sample
+{$IFDEF VER_1_3_0_3815}
+  GorillaFMODAudioManager1.PlaySound(FThrow.Reference, FThrowChannel);
+{$ELSE}
   GorillaFMODAudioManager1.PlaySound(FThrow, FThrowChannel);
+{$ENDIF}
 end;
 
 procedure TForm1.ShowToolTip(AText : String; X, Y: Single);
@@ -1230,7 +1294,11 @@ begin
     FHUD.Start();
 
   // Play the plop sound sample of the coconut
+{$IFDEF VER_1_3_0_3815}
+  GorillaFMODAudioManager1.PlaySound(FPlop.Reference, FThrowChannel);
+{$ELSE}
   GorillaFMODAudioManager1.PlaySound(FPlop, FThrowChannel);
+{$ENDIF}
 end;
 
 procedure TForm1.CollectBananaActionExecute(Sender: TObject);
@@ -1252,7 +1320,11 @@ begin
   GorillaInventory1.Collect('Banana');
 
   // Play collect sound sample
+{$IFDEF VER_1_3_0_3815}
+  GorillaFMODAudioManager1.PlaySound(FCollect.Reference, FThrowChannel);
+{$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
+{$ENDIF}
 end;
 
 procedure TForm1.ShakeTheTreeActionExecute(Sender: TObject);
@@ -1309,7 +1381,11 @@ begin
   Self.FCoconutFound := true;
 
   // Play collect sound sample
+{$IFDEF VER_1_3_0_3815}
+  GorillaFMODAudioManager1.PlaySound(FCollect.Reference, FThrowChannel);
+{$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
+{$ENDIF}
 end;
 
 end.
