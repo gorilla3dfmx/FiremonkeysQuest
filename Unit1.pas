@@ -188,16 +188,16 @@ type
     procedure HideToolTip();
 
     function PerformGameObjectToolTip(AObj : TControl3D; AIdx : Integer;
-      AGlobalBounds : Boolean; AScreenPos : TPoint3D; ARayStart : TPoint3D;
+      AGlobalBounds : Boolean; AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
       X, Y : Single) : Boolean;
-    function PerformGameObjectToolTips(AScreenPos : TPoint3D; ARayStart : TPoint3D;
+    function PerformGameObjectToolTips(AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
       X, Y : Single) : Boolean;
 
     // Inventory collection on click
     function PerformGameObjectClick(AObj : TControl3D; AIdx : Integer;
-      AGlobalBounds : Boolean; AScreenPos : TPoint3D; ARayStart : TPoint3D;
+      AGlobalBounds : Boolean; AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
       X, Y : Single; AAction : TAction) : Boolean;
-    function PerformGameObjectClicks(AScreenPos : TPoint3D; ARayStart : TPoint3D;
+    function PerformGameObjectClicks(AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
       X, Y : Single) : Boolean;
 
   public
@@ -653,6 +653,15 @@ begin
   FHUD.Align := TAlignLayout.Client;
   FHUD.Viewport := GorillaViewport1;
   FHUD.AudioManager := Self.GorillaFMODAudioManager1;
+
+{$IFDEF VER_1_3_0_3815}
+  // Optimize object detection
+  // Caution: without that PickTriangle might get very slow on high-poly models!
+  (Landscape.Def as TModelDef).AcquireBVH();
+  (Banana.Def as TModelDef).AcquireBVH();
+  (CoconutTree.Def as TModelDef).AcquireBVH();
+  (Coconut.Def as TModelDef).AcquireBVH();
+{$ENDIF}
 end;
 
 procedure TForm1.FormShow(Sender: TObject);
@@ -751,19 +760,23 @@ begin
 
   FMusicChannel := GorillaFMODAudioManager1.AddChannelGroup('Music');
   FMusicChannel.Volume := 0.5;
-  GorillaFMODAudioManager1.PlaySound(FMusic.Reference, FMusicChannel);
+
+  FMusic.ChannelGroup := 'Music';
+  FMusic.Play();
 
   // load foot steps sample
   FSteps := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
   FSteps.FileName := LPath + '167157__kmoon__footsteps_grass.ogg';
   FSteps.Loop := true;
   FStepsChannel := GorillaFMODAudioManager1.AddChannelGroup('Steps');
+  FSteps.ChannelGroup := 'Steps';
 
   // load throwing sound sample
   FThrow := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
   FThrow.FileName := LPath + '443617__hachiman935__objeto_lanzado_01.ogg';
   FThrowChannel := GorillaFMODAudioManager1.AddChannelGroup('Throw');
   FThrowChannel.Volume := FThrowChannel.Volume * 2;
+  FThrow.ChannelGroup := 'Throw';
 
   // load plop sample
   FPlop := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
@@ -827,6 +840,13 @@ begin
   FPathFinder := TGorillaPathfindingAStar.Create(nil);
   FPathFinder.ObstacleMargin := Point3D(0.5, 0.5, 0.5);
 
+  // Set dimensions of grid and used 3D space
+  LGridSize := TPoint.Create(PATHFINDING_GRID_X, PATHFINDING_GRID_Z);
+  FPathFinder.GridDimensions := LGridSize;
+
+  LSize3D := TPointF.Create(PATHFINDING_3DSIZE_X, PATHFINDING_3DSIZE_Z);
+  FPathFinder.Size3D := LSize3D;
+
   // Link monkey group as agent to the path finder component
   FPathFinder.Agent := MonkeyNavigator;
 
@@ -843,15 +863,11 @@ begin
   FPathFinder.AddObstacle(AlphaWall10, true);
 
   // Adding game objects in map
-  FPathFinder.AddObstacle(Banana, true);
-  FPathFinder.AddObstacle(CoconutTree, true);
+  FPathFinder.AddObstacle(Banana, Banana.GetAbsoluteBoundingBox(), true);
 
-  // Set dimensions of grid and used 3D space
-  LGridSize := TPoint.Create(PATHFINDING_GRID_X, PATHFINDING_GRID_Z);
-  FPathFinder.GridDimensions := LGridSize;
-
-  LSize3D := TPointF.Create(PATHFINDING_3DSIZE_X, PATHFINDING_3DSIZE_Z);
-  FPathFinder.Size3D := LSize3D;
+  // !!! BUG !!!: for some reasons the coconut tree bounding box is huge inside the
+  // pathfinding, so the character always travels around
+  FPathFinder.AddObstacle(CoconutTree, CoconutTree.GetAbsoluteBoundingBox(), true);
 
   // Compute a path around all obstacles in given area
   FDestPoint := MonkeyNavigator.AbsolutePosition;
@@ -945,9 +961,9 @@ begin
   Monkey.AnimationManager.PlayAnimation('firemonkey-run-forward.fbx');
 
   // Play walking sound if not already playing
-  if not FStepsChannel.IsPlaying then
+  if not (Assigned(FStepsChannel) and FStepsChannel.IsPlaying) then
   {$IFDEF VER_1_3_0_3815}
-    GorillaFMODAudioManager1.PlaySound(FSteps.Reference, FStepsChannel);
+    FSteps.Play();
   {$ELSE}
     GorillaFMODAudioManager1.PlaySound(FSteps, FStepsChannel);
   {$ENDIF}
@@ -1005,7 +1021,7 @@ begin
 
   // Play the plop sound sample
 {$IFDEF VER_1_3_0_3815}
-  GorillaFMODAudioManager1.PlaySound(FThrow.Reference, FThrowChannel);
+  FThrow.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FThrow, FThrowChannel);
 {$ENDIF}
@@ -1026,30 +1042,41 @@ begin
 end;
 
 function TForm1.PerformGameObjectToolTip(AObj : TControl3D; AIdx : Integer; AGlobalBounds : Boolean;
-  AScreenPos : TPoint3D; ARayStart : TPoint3D; X, Y : Single) : Boolean;
+  AScreenPos3D : TPoint3D; ARayStart : TPoint3D; X, Y : Single) : Boolean;
 var LRayDir : TPoint3D;
     LHitPosFar,
     LHitPos : TPoint3D;
     LHit    : Boolean;
     LBBox   : TBoundingBox;
     LDist1, LDist2 : Single;
+  {$IFDEF VER_1_3_0_3815}
+    LRayCastRes : TTriangleRayCastResult;
+  {$ENDIF}
 begin
   if not AObj.Visible then
     Exit(false);
 
-  LRayDir := (AScreenPos - ARayStart).Normalize();
+  LRayDir := (AScreenPos3D - ARayStart).Normalize();
   if AObj is TGorillaModel then
   begin
+  {$IFDEF VER_1_0_0_2573}
     // For model gameobjects is much faster to do a bounding box intersection
     // test than a triangle test!
-  {$IFDEF VER_1_0_0_2573}
     if AGlobalBounds then LBBox := AObj.GlobalBounds
                      else LBBox := TGorillaModel(AObj).GetAbsoluteBoundingBox();
-  {$ELSE}
-    LBBox := TGorillaModel(AObj).GetAbsoluteBoundingBox();
-  {$ENDIF}
+
     LHit := FMX.Types3D.RayCastCuboidIntersect(ARayStart, LRayDir, LBBox.CenterPoint,
       LBBox.Width, LBBox.Height, LBBox.Depth, LHitPos, LHitPosFar) > 0;
+  {$ENDIF}
+  {$IFDEF VER_1_3_0_3815}
+    TGorillaModel(AObj).SetHitTestValue(true);
+    try
+      LHit := TGorillaModel(AObj).PickTriangle(X, Y, LRayCastRes);
+      LHitPos := LRayCastRes.Intersection;
+    finally
+      TGorillaModel(AObj).SetHitTestValue(false);
+    end;
+  {$ENDIF}
   end
   else LHit := AObj.RayCastIntersect(ARayStart, LRayDir, LHitPos);
 
@@ -1076,25 +1103,25 @@ begin
   Result := false;
 end;
 
-function TForm1.PerformGameObjectToolTips(AScreenPos : TPoint3D; ARayStart : TPoint3D;
+function TForm1.PerformGameObjectToolTips(AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
   X, Y : Single) : Boolean;
 begin
   // Banana
-  Result := PerformGameObjectToolTip(Banana, 0, false, AScreenPos, ARayStart,
+  Result := PerformGameObjectToolTip(Banana, 0, false, AScreenPos3D, ARayStart,
     X, Y);
 
   if Result then
     Exit;
 
   // Coconut Tree
-  Result := PerformGameObjectToolTip(CoconutTree, 1, true, AScreenPos, ARayStart,
+  Result := PerformGameObjectToolTip(CoconutTree, 1, true, AScreenPos3D, ARayStart,
     X, Y);
 
   if Result then
     Exit;
 
   // Coconut
-  Result := PerformGameObjectToolTip(Coconut, 2, false, AScreenPos, ARayStart,
+  Result := PerformGameObjectToolTip(Coconut, 2, false, AScreenPos3D, ARayStart,
     X, Y);
 
   if Result then
@@ -1102,30 +1129,41 @@ begin
 end;
 
 function TForm1.PerformGameObjectClick(AObj : TControl3D; AIdx : Integer;
-  AGlobalBounds : Boolean; AScreenPos : TPoint3D; ARayStart : TPoint3D;
+  AGlobalBounds : Boolean; AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
   X, Y : Single; AAction : TAction) : Boolean;
 var LRayDir : TPoint3D;
     LHitPosFar,
     LHitPos : TPoint3D;
     LBBox   : TBoundingBox;
     LDist1, LDist2 : Single;
+  {$IFDEF VER_1_3_0_3815}
+    LRayCastRes : TTriangleRayCastResult;
+  {$ENDIF}
 begin
   if not AObj.Visible then
     Exit(false);
 
-  LRayDir := (AScreenPos - ARayStart).Normalize();
+  LRayDir := (AScreenPos3D - ARayStart).Normalize();
   if AObj is TGorillaModel then
   begin
+  {$IFDEF VER_1_0_0_2573}
     // For model gameobjects is much faster to do a bounding box intersection
     // test than a triangle test!
-  {$IFDEF VER_1_0_0_2573}
     if AGlobalBounds then LBBox := AObj.GlobalBounds
                      else LBBox := TGorillaModel(AObj).GetAbsoluteBoundingBox();
-  {$ELSE}
-    LBBox := TGorillaModel(AObj).GetAbsoluteBoundingBox();
-  {$ENDIF}
+
     Result := FMX.Types3D.RayCastCuboidIntersect(ARayStart, LRayDir, LBBox.CenterPoint,
       LBBox.Width, LBBox.Height, LBBox.Depth, LHitPos, LHitPosFar) > 0;
+  {$ENDIF}
+  {$IFDEF VER_1_3_0_3815}
+    TGorillaModel(AObj).SetHitTestValue(true);
+    try
+      Result := TGorillaModel(AObj).PickTriangle(X, Y, LRayCastRes);
+      LHitPos := LRayCastRes.Intersection;
+    finally
+      TGorillaModel(AObj).SetHitTestValue(false);
+    end;
+  {$ENDIF}
   end
   else Result := AObj.RayCastIntersect(ARayStart, LRayDir, LHitPos);
 
@@ -1143,29 +1181,30 @@ begin
       // Start action ...
       if Assigned(AAction) then
         AAction.Execute();
-    end;
+    end
+    else Log.d('toooooo far away: %n < %n', [LDist1, LDist2]);
   end;
 end;
 
-function TForm1.PerformGameObjectClicks(AScreenPos : TPoint3D; ARayStart : TPoint3D;
+function TForm1.PerformGameObjectClicks(AScreenPos3D : TPoint3D; ARayStart : TPoint3D;
   X, Y : Single) : Boolean;
 begin
   // Banana
-  Result := PerformGameObjectClick(Banana, 0, false, AScreenPos, ARayStart,
+  Result := PerformGameObjectClick(Banana, 0, false, AScreenPos3D, ARayStart,
     X, Y, Self.CollectBananaAction);
 
   if Result then
     Exit;
 
   // CoconutTree
-  Result := PerformGameObjectClick(CoconutTree, 1, true, AScreenPos, ARayStart,
+  Result := PerformGameObjectClick(CoconutTree, 1, true, AScreenPos3D, ARayStart,
     X, Y, Self.ShakeTheTreeAction);
 
   if Result then
     Exit;
 
   // Coconut
-  Result := PerformGameObjectClick(Coconut, 2, false, AScreenPos, ARayStart,
+  Result := PerformGameObjectClick(Coconut, 2, false, AScreenPos3D, ARayStart,
     X, Y, Self.CollectCoconutAction);
 
   if Result then
@@ -1295,7 +1334,7 @@ begin
 
   // Play the plop sound sample of the coconut
 {$IFDEF VER_1_3_0_3815}
-  GorillaFMODAudioManager1.PlaySound(FPlop.Reference, FThrowChannel);
+  FPlop.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FPlop, FThrowChannel);
 {$ENDIF}
@@ -1321,7 +1360,7 @@ begin
 
   // Play collect sound sample
 {$IFDEF VER_1_3_0_3815}
-  GorillaFMODAudioManager1.PlaySound(FCollect.Reference, FThrowChannel);
+  FCollect.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
 {$ENDIF}
@@ -1382,7 +1421,7 @@ begin
 
   // Play collect sound sample
 {$IFDEF VER_1_3_0_3815}
-  GorillaFMODAudioManager1.PlaySound(FCollect.Reference, FThrowChannel);
+  FCollect.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
 {$ENDIF}
