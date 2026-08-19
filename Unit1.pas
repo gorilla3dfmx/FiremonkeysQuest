@@ -21,16 +21,35 @@ uses
   Gorilla.Audio.FMOD.Intf.ChannelGroup, Gorilla.Audio.FMOD.Intf.SoundGroup,
   Gorilla.Audio.Manager, Gorilla.Material.Custom;
 
+{ $DEFINE VER_1_0_0_2573}
+{$DEFINE VER_1_3_0_3815}
+{ $DEFINE VER_1_4_0_0}
+
 /// <summary>
 /// After v1.0.0.2573 the dialogue HUD was fixed. Before that version, we need
 /// workaround.
 /// </summary>
-{ $DEFINE FIX_DIALOGUE_HUD}
-{ $DEFINE VER_1_0_0_2573}
-{$DEFINE VER_1_3_0_3815}
+{$DEFINE FIX_DIALOGUE_HUD}
+
+{$IFDEF VER_1_3_0_3815}
+  {$UNDEF FIX_DIALOGUE_HUD}
+
+  {$DEFINE NO_SPECIAL_DIALOGUE_HUD}
+  {$DEFINE FIX_FMOD_AUDIO}
+  {$DEFINE FIX_PICKING}
+  {$DEFINE FIX_PATHFINDING}
+{$ENDIF}
+{$IFDEF VER_1_4_0_0}
+  {$UNDEF FIX_DIALOGUE_HUD}
+
+  {$DEFINE NO_SPECIAL_DIALOGUE_HUD}
+  {$DEFINE FIX_FMOD_AUDIO}
+  {$DEFINE FIX_PICKING}
+  { $DEFINE FIX_PATHFINDING}
+{$ENDIF}
 
 type
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF NO_SPECIAL_DIALOGUE_HUD}
   TFixedDialogueHUD = class(TGorillaDialogueHUD)
   end;
 {$ELSE}
@@ -152,7 +171,7 @@ type
     FCoconutFound : Boolean;
     FBananaUnlocked : Boolean;
 
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_FMOD_AUDIO}
     // Audio: a separated channel for each sound is not needed, but for better controlling
     FMusic : TGorillaFMODSoundItem;
     FMusicChannel : IGorillaFMODChannelGroup;
@@ -234,7 +253,7 @@ const
   PATHFINDING_3DSIZE_X = 128;
   PATHFINDING_3DSIZE_Z = 128;
 
-{$IFnDEF VER_1_3_0_3815}
+{$IFnDEF NO_SPECIAL_DIALOGUE_HUD}
 {$IFDEF FIX_DIALOGUE_HUD}
 { TFixedDialogueHUD }
 
@@ -654,7 +673,7 @@ begin
   FHUD.Viewport := GorillaViewport1;
   FHUD.AudioManager := Self.GorillaFMODAudioManager1;
 
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_PICKING}
   // Optimize object detection
   // Caution: without that PickTriangle might get very slow on high-poly models!
   (Landscape.Def as TModelDef).AcquireBVH();
@@ -712,7 +731,7 @@ begin
   LShdr := TStringList.Create();
   LShdr.Text :=
     'void SurfaceShader(inout TLocals DATA){'#13#10 +
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_PICKING}
     '  float l_Dist = distance(_EyePos.xyz, DATA.TransfVertexPos.xyz);'#13#10 +
 {$ELSE}
     '  float l_Dist = distance(_EyePos.xyz, DATA.TransfVertPos.xyz);'#13#10 +
@@ -753,7 +772,7 @@ begin
 {$ENDIF}
 
   // load music
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_FMOD_AUDIO}
   FMusic := GorillaFMODAudioManager1.Sounds.Add() as TGorillaFMODSoundItem;
   FMusic.FileName := LPath + 'jew-13506.mp3';
   FMusic.Loop := true;
@@ -862,7 +881,7 @@ begin
   FPathFinder.AddObstacle(AlphaWall9, true);
   FPathFinder.AddObstacle(AlphaWall10, true);
 
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_PATHFINDING}
   // !!! BUG !!!: pathfinding not producing the correct bounding box, even on
   // submitting one by parameter
 
@@ -887,11 +906,11 @@ begin
   FPathFinder.AddObstacle(LProxy, true);   // instead of CoconutTree
 {$ELSE}
   // Adding game objects in map
-  FPathFinder.AddObstacle(Banana, Banana.GetAbsoluteBoundingBox(), true);
+  FPathFinder.AddObstacle(Banana, true);
 
   // !!! BUG !!!: for some reasons the coconut tree bounding box is huge inside the
   // pathfinding, so the character always travels around
-  FPathFinder.AddObstacle(CoconutTree, CoconutTree.GetAbsoluteBoundingBox(), true);
+  FPathFinder.AddObstacle(CoconutTree, true);
 {$ENDIF}
 
   // Compute a path around all obstacles in given area
@@ -987,7 +1006,7 @@ begin
 
   // Play walking sound if not already playing
   if not (Assigned(FStepsChannel) and FStepsChannel.IsPlaying) then
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_FMOD_AUDIO}
     FSteps.Play();
   {$ELSE}
     GorillaFMODAudioManager1.PlaySound(FSteps, FStepsChannel);
@@ -1045,7 +1064,7 @@ begin
   Coconut.SetVisibility(true);
 
   // Play the plop sound sample
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_FMOD_AUDIO}
   FThrow.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FThrow, FThrowChannel);
@@ -1074,7 +1093,7 @@ var LRayDir : TPoint3D;
     LHit    : Boolean;
     LBBox   : TBoundingBox;
     LDist1, LDist2 : Single;
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_PICKING}
     LRayCastRes : TTriangleRayCastResult;
   {$ENDIF}
 begin
@@ -1093,7 +1112,7 @@ begin
     LHit := FMX.Types3D.RayCastCuboidIntersect(ARayStart, LRayDir, LBBox.CenterPoint,
       LBBox.Width, LBBox.Height, LBBox.Depth, LHitPos, LHitPosFar) > 0;
   {$ENDIF}
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_PICKING}
     TGorillaModel(AObj).SetHitTestValue(true);
     try
       LHit := TGorillaModel(AObj).PickTriangle(X, Y, LRayCastRes);
@@ -1161,7 +1180,7 @@ var LRayDir : TPoint3D;
     LHitPos : TPoint3D;
     LBBox   : TBoundingBox;
     LDist1, LDist2 : Single;
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_PICKING}
     LRayCastRes : TTriangleRayCastResult;
   {$ENDIF}
 begin
@@ -1180,7 +1199,7 @@ begin
     Result := FMX.Types3D.RayCastCuboidIntersect(ARayStart, LRayDir, LBBox.CenterPoint,
       LBBox.Width, LBBox.Height, LBBox.Depth, LHitPos, LHitPosFar) > 0;
   {$ENDIF}
-  {$IFDEF VER_1_3_0_3815}
+  {$IFDEF FIX_PICKING}
     TGorillaModel(AObj).SetHitTestValue(true);
     try
       Result := TGorillaModel(AObj).PickTriangle(X, Y, LRayCastRes);
@@ -1358,7 +1377,7 @@ begin
     FHUD.Start();
 
   // Play the plop sound sample of the coconut
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_FMOD_AUDIO}
   FPlop.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FPlop, FThrowChannel);
@@ -1384,7 +1403,7 @@ begin
   GorillaInventory1.Collect('Banana');
 
   // Play collect sound sample
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_FMOD_AUDIO}
   FCollect.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
@@ -1445,7 +1464,7 @@ begin
   Self.FCoconutFound := true;
 
   // Play collect sound sample
-{$IFDEF VER_1_3_0_3815}
+{$IFDEF FIX_FMOD_AUDIO}
   FCollect.Play();
 {$ELSE}
   GorillaFMODAudioManager1.PlaySound(FCollect, FThrowChannel);
