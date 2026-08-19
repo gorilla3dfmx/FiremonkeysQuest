@@ -862,12 +862,37 @@ begin
   FPathFinder.AddObstacle(AlphaWall9, true);
   FPathFinder.AddObstacle(AlphaWall10, true);
 
+{$IFDEF VER_1_3_0_3815}
+  // !!! BUG !!!: pathfinding not producing the correct bounding box, even on
+  // submitting one by parameter
+
+  // Adding game objects in map
+  var LBB := Banana.GetAbsoluteBoundingBox();
+
+  var LProxy := TDummy.Create(GorillaViewport1);
+  LProxy.Parent := GorillaViewport1;
+  LProxy.SetSize(LBB.Width, LBB.Height, LBB.Depth);
+  LProxy.Position.Point := LBB.CenterPoint;
+
+  FPathFinder.AddObstacle(LProxy, true); // instead of Banana
+
+  // Adding the second game object in map
+  LBB := CoconutTree.GetAbsoluteBoundingBox();
+
+  LProxy := TDummy.Create(GorillaViewport1);
+  LProxy.Parent := GorillaViewport1;
+  LProxy.SetSize(LBB.Width, LBB.Height, LBB.Depth);
+  LProxy.Position.Point := LBB.CenterPoint;
+
+  FPathFinder.AddObstacle(LProxy, true);   // instead of CoconutTree
+{$ELSE}
   // Adding game objects in map
   FPathFinder.AddObstacle(Banana, Banana.GetAbsoluteBoundingBox(), true);
 
   // !!! BUG !!!: for some reasons the coconut tree bounding box is huge inside the
   // pathfinding, so the character always travels around
   FPathFinder.AddObstacle(CoconutTree, CoconutTree.GetAbsoluteBoundingBox(), true);
+{$ENDIF}
 
   // Compute a path around all obstacles in given area
   FDestPoint := MonkeyNavigator.AbsolutePosition;
